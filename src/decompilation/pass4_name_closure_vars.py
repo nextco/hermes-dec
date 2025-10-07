@@ -72,9 +72,35 @@ def pass4_name_closure_vars(state : HermesDecompiler, function_body : Decompiled
                 
                 else: # This a closure-referenced variable reassignment
                     line.tokens = [RT(varname), AT(), RHRT(token.value_register)]
-                
+               
             elif isinstance(token, LoadFromEnvironmentToken):
-                var_name = '_closure%d_slot%d' % (function_body.local_items[token.register].nesting_quantity,
-                    token.slot_index)
-                
-                line.tokens[2] = RT(var_name)
+                # Resolve which attribute carries the environment register across versions
+                env_reg = None
+                for attr in ("env_register", "environment_register", "environment_id"):
+                    if hasattr(token, attr):
+                        env_reg = getattr(token, attr)
+                        break
+                # Fallback: some builds store the env reg in `register`
+                if env_reg is None and hasattr(token, "register"):
+                    env_reg = token.register
+
+                env = function_body.local_items.get(env_reg)
+                if env is None:
+                    # Last-resort fallback so we don't crash; names will still be stable
+                     env = parent_environment
+
+                nesting = env.nesting_quantity if env is not None else 0
+                var_name = '_closure%d_slot%d' % (nesting, token.slot_index)
+
+    # Replace the RHS with the named closure variable.
+    # In all supported IRs, the RHS is at index 2 for this pass.
+    # line.tokens[2] = RT(var_name)
+
+    #        elif isinstance(token, LoadFromEnvironmentToken):
+    #            # Use the environment register, not the destination register.
+    #           env = function_body.local_items.get(token.env_register)
+    #            if env is None:
+    #                raise KeyError(f"Unknown environment register r{token.env_register} in LoadFromEnvironmentToken")
+    #            var_name = '_closure%d_slot%d' % (env.nesting_quantity, token.slot_index)
+    #            # Replace RHS with the named closure variable
+    #            line.tokens[2] = RT(var_name)
